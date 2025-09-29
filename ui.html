@@ -1,0 +1,84 @@
+<style>
+  body { font-family: sans-serif; text-align: center; padding: 16px; }
+  button {
+    background-color: #1abc9c; color: white; border: none; padding: 10px 20px;
+    border-radius: 4px; font-size: 14px; cursor: pointer; display: block; width: 100%; margin-bottom: 8px;
+  }
+  button:disabled { background-color: #e0e0e0; cursor: not-allowed; }
+  p { font-size: 12px; color: #555; }
+  .separator { border-top: 1px solid #ccc; margin: 16px 0; }
+  .individual-buttons-title { font-weight: bold; margin-bottom: 8px; }
+</style>
+
+<h2>アイコンGeoJSONエクスポート</h2>
+<p id="message">データを待っています...</p>
+
+<div id="buttons-area"></div>
+
+<script>
+  const buttonsArea = document.getElementById('buttons-area');
+  const messageEl = document.getElementById('message');
+  
+  let allFloorsData = null;
+
+  function downloadJson(jsonData, fileName) {
+    const blob = new Blob([jsonData], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = fileName;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    return new Promise(resolve => setTimeout(resolve, 100));
+  }
+
+  window.onmessage = (event) => {
+    const msg = event.data.pluginMessage;
+    
+    if (msg.type === 'export-floor-geojson-list') {
+      allFloorsData = JSON.parse(msg.data);
+      messageEl.textContent = `${allFloorsData.length}フロア分のアイコンデータを準備しました。`;
+      buttonsArea.innerHTML = ''; // ボタンをクリア
+
+      // 1. 一括保存ボタン
+      const exportAllButton = document.createElement('button');
+      exportAllButton.textContent = '全てのフロアのアイコンを保存';
+      exportAllButton.onclick = async () => {
+        messageEl.textContent = '全フロアのアイコンを保存中...';
+        for (const floorData of allFloorsData) {
+          const fileName = `${floorData.floorId}-icon.geojson`;
+          await downloadJson(JSON.stringify(floorData.geoJson, null, 2), fileName);
+        }
+        messageEl.textContent = '全フロアの保存が完了しました。';
+      };
+      buttonsArea.appendChild(exportAllButton);
+      
+      const separator = document.createElement('div');
+      separator.className = 'separator';
+      buttonsArea.appendChild(separator);
+
+      const individualTitle = document.createElement('p');
+      individualTitle.className = 'individual-buttons-title';
+      individualTitle.textContent = 'フロアごとに保存';
+      buttonsArea.appendChild(individualTitle);
+      
+      // 2. フロアごとの個別保存ボタン
+      allFloorsData.forEach(floorData => {
+        const individualButton = document.createElement('button');
+        individualButton.textContent = `${floorData.floorId} (${floorData.geoJson.features.length}個) を保存`;
+        individualButton.style.backgroundColor = '#3498db';
+        individualButton.onclick = () => {
+          const fileName = `${floorData.floorId}-icon.geojson`;
+          downloadJson(JSON.stringify(floorData.geoJson, null, 2), fileName);
+        };
+        buttonsArea.appendChild(individualButton);
+      });
+
+    } 
+    else if (msg.type === 'error') {
+      messageEl.textContent = msg.message;
+    }
+  };
+</script>
