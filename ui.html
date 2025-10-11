@@ -15,6 +15,7 @@
 
 <div id="buttons-area"></div>
 
+<script src="https://cdn.jsdelivr.net/npm/@turf/turf@7/turf.min.js"></script>
 <script>
   const buttonsArea = document.getElementById('buttons-area');
   const messageEl = document.getElementById('message');
@@ -34,11 +35,86 @@
     return new Promise(resolve => setTimeout(resolve, 100));
   }
 
+  // 1フロア分のGeoJSONを保存する関数
+  function fixWindingOrder(geoJsonData) {
+    const correctedFeatures = geoJsonData.features.map((feature) => {
+      return turf.rewind(feature, { inplace: false });
+    });
+    return { type: 'FeatureCollection', features: correctedFeatures };
+  }
+
+  // ★★★ 追加: ピクセル座標で円ポリゴンを生成するヘルパー関数 ★★★
+  /**
+   * 中心点と半径（ピクセル単位）から、円を近似するポリゴンフィーチャーを作成します。
+   * @param {number[]} center - [x, y]の中心座標
+   * @param {number} radius - 半径 (ピクセル)
+   * @param {object} properties - フィーチャーに付与するプロパティ
+   * @returns {object} GeoJSONのPolygon Feature
+   */
+  function createCirclePolygon(center, radius, properties) {
+    const steps = 4; // 円を64角形で近似
+    const coordinates = [];
+    for (let i = 0; i < steps; i++) {
+      const angle = (i / steps) * 2 * Math.PI;
+      const x = center[0] + radius * Math.cos(angle);
+      const y = center[1] + radius * Math.sin(angle);
+      coordinates.push([x, y]);
+    }
+    coordinates.push(coordinates[0]); // ポリゴンを閉じる
+    return turf.polygon([coordinates], properties);
+  }
+
+  /*
+    @param   JsonData: IconFloorDataWithRoomPolygonData
+    @return  IconFloorData
+  */
+  function makeId(JsonData) {
+    const iconFloorData = JsonData.icon;
+    const roomFloorData = JsonData.room;
+    const radius = 8;
+    // console.log(iconFloorData.geojson.features, "これか？");
+    const iconFeaturesWithId = iconFloorData.geoJson.features.map((feature) => {
+      // const iconCirclePolygon = createCirclePolygon(feature.geometry.coordinates, radius, {});
+      const rewindedRoomFeatureCollection = fixWindingOrder(roomFloorData.geoJson);
+      const overlapRooms = rewindedRoomFeatureCollection.features.filter((roomFeature) => {
+        // if (roomFeature.properties.id === "base") {
+        //   console.log("base: ", roomFeature);
+        // }
+        return turf.booleanIntersects(roomFeature, feature);
+      });
+      if (overlapRooms.length === 0) {
+        console.log("重なっている施設がないアイコンです。", feature);
+        return feature;
+      }
+      // console.log(overlapRooms);
+      const selectingRoom = overlapRooms.find(overlapRoom => overlapRoom.properties.id !== "base" && overlapRoom.properties.id !== "void");
+      const selectedRoom = selectingRoom || overlapRooms[0];
+      return {
+        ...feature,
+        properties: {
+          id: selectedRoom.properties.id,
+          category: feature.properties.category
+        }
+      };
+    });
+    
+    return {
+      floorId: iconFloorData.floorId,
+      geoJson: {
+        type: "FeatureCollection",
+        features: iconFeaturesWithId
+      }
+    };
+  }
+
   window.onmessage = (event) => {
     const msg = event.data.pluginMessage;
     
     if (msg.type === 'export-floor-geojson-list') {
-      allFloorsData = JSON.parse(msg.data);
+      allFloorsIntegratedData = JSON.parse(msg.data);
+      const allFloorsData = allFloorsIntegratedData.map((integratedData) => {
+        return makeId(integratedData);
+      });
       messageEl.textContent = `${allFloorsData.length}フロア分のアイコンデータを準備しました。`;
       buttonsArea.innerHTML = ''; // ボタンをクリア
 
