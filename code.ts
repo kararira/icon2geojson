@@ -8,6 +8,7 @@ interface IconGeoJsonFeature {
   };
   properties: {
     id: string;
+    pair_facilityId: string;
     category: string;
   };
 }
@@ -303,7 +304,8 @@ async function main() {
             coordinates: [centerX, frameHeightForYFlip - centerY], 
           },
           properties: {
-            id: `${instance.parent?.name}-${instance.name}`,
+            id: `${instance.name}`,
+            pair_facilityId: `${instance.name}`,
             category: component?.name ?? "",
           },
         };
